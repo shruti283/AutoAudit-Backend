@@ -1,0 +1,13 @@
+opencv-python
+pytesseract
+easyocr
+flask
+fastapi
+uvicorn
+torch
+torchvision
+scikit-learn
+pandas
+numpy
+matplotlib
+joblib
