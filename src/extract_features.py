@@ -2,7 +2,7 @@
 import os
 import re
 import cv2
-import pytesseract
+import easyocr
 import pandas as pd
 
 NUM_RE = re.compile(r"\d{1,3}(?:[,]\d{3})*(?:\.\d{1,2})?|\d+\.\d{1,2}")
@@ -36,7 +36,9 @@ def extract_bill_features(image_path, label=None):
     # optional thresholding (comment/uncomment as needed)
     # _, gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
 
-    text = pytesseract.image_to_string(gray, lang='eng')
+    reader = easyocr.Reader(['en'], gpu=False)
+    result = reader.readtext(gray, detail=0)
+    text = " ".join(result)
     text_upper = text.upper()
 
     # Keyword flags
