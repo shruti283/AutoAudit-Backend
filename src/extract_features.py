@@ -5,9 +5,6 @@ import cv2
 import pytesseract
 import pandas as pd
 
-# UPDATE this path if Tesseract is in a different location on your machine:
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-
 NUM_RE = re.compile(r"\d{1,3}(?:[,]\d{3})*(?:\.\d{1,2})?|\d+\.\d{1,2}")
 
 def parse_amounts(text):

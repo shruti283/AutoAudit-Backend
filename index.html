@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AutoAudit · Receipt Verifier</title>
+
+  <!-- Tailwind (CDN for quick dev) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+
+  <!-- GSAP for smooth animations -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+
+  <style>
+    :root{
+      --bg-1: #0B1220;
+      --card: rgba(18,24,33,0.7);
+      --glass-border: rgba(255,255,255,0.06);
+      --accent: #346fd4; /* primary-blue */
+      --accent-2: #b37bff;
+    }
+
+    html,body { height:100%; background: radial-gradient(1200px 600px at 10% 10%, #071026 0%, var(--bg-1) 40%, #03050a 100%); }
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; color: #e6eef8; margin:0; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+
+    /* soft glass card */
+    .glass {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(10px) saturate(120%);
+      box-shadow: 0 6px 30px rgba(2,6,23,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
+    }
+
+    /* upload drop area visuals */
+    .dropzone {
+      transition: all .18s ease;
+      border-style: dashed;
+      border-width: 1px;
+      border-color: rgba(255,255,255,0.06);
+      background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
+    }
+    .dropzone.dragover {
+      transform: translateY(-3px) scale(1.01);
+      border-color: rgba(52,111,212,0.9);
+      box-shadow: 0 10px 40px rgba(52,111,212,0.08);
+    }
+
+    /* subtle neon outlines */
+    .neon-outline {
+      box-shadow: 0 0 0 1px rgba(78,161,255,0.06), 0 6px 30px rgba(52,111,212,0.06);
+    }
+
+    /* Result badges */
+    .badge-real { background: linear-gradient(90deg, #16a34a, #10b981); }
+    .badge-fake { background: linear-gradient(90deg, #ef4444, #f97316); }
+
+    /* small spinner */
+    .spinner {
+      border: 3px solid rgba(255,255,255,0.08);
+      border-top: 3px solid #fff;
+      border-radius: 50%;
+      width: 20px; height: 20px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* responsive tweaks */
+    @media (max-width: 900px) {
+      .sidebar { display: none; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="min-h-screen flex">
+    <!-- SIDEBAR -->
+    <aside class="sidebar w-72 p-6 glass neon-outline border-r border-white/5 hidden md:block">
+      <div class="mb-6">
+        <div class="flex items-center gap-3">
+          <div class="p-2 rounded-lg bg-gradient-to-br from-[#0f1724] to-[#0b1220]">
+            <i class="fas fa-robot text-2xl" style="color:var(--accent)"></i>
+          </div>
+          <div>
+            <h1 class="text-2xl font-bold">AutoAudit</h1>
+            <p class="text-xs text-white/70">AI Receipt Verification</p>
+          </div>
+        </div>
+      </div>
+
+      <nav class="mt-6 space-y-3">
+        <button id="btn-upload" class="w-full text-left px-4 py-3 rounded-lg bg-[rgba(52,111,212,0.14)] hover:bg-[rgba(52,111,212,0.2)] transition flex items-center gap-3">
+          <i class="fas fa-upload" style="width:18px"></i> Upload & Audit
+        </button>
+
+        <button id="btn-history" class="w-full text-left px-4 py-3 rounded-lg hover:bg-white/5 transition flex items-center gap-3">
+          <i class="fas fa-history" style="width:18px"></i> History
+        </button>
+
+        <button id="btn-sample" class="w-full text-left px-4 py-3 rounded-lg hover:bg-white/5 transition flex items-center gap-3">
+          <i class="fas fa-image" style="width:18px"></i> Show Sample Receipt
+        </button>
+      </nav>
+
+      <div class="mt-8 text-xs text-white/60">
+        <div class="font-semibold">Status</div>
+        <div class="mt-2">Backend: <span id="backend-status" class="text-green-400 font-medium">Checking...</span></div>
+        <div class="mt-4 text-xs text-white/50">Local history stored in your browser (no server). Use it while testing.</div>
+      </div>
+
+      <div class="mt-auto pt-6 text-xs text-white/40">
+        <div>Made with AutoAudit</div>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="flex-1 p-8">
+      <header class="flex items-start justify-between mb-8">
+        <div>
+          <h2 class="text-4xl font-extrabold">Upload Receipt</h2>
+          <p class="text-sm text-white/70 mt-1">Drag or choose a receipt image — the AI will analyze authenticity.</p>
+        </div>
+        <div class="flex gap-3">
+          <div id="sample-pill" class="hidden items-center gap-3 text-sm bg-white/5 px-3 py-2 rounded-lg">
+            <i class="fas fa-check-circle text-green-400"></i> Sample loaded
+          </div>
+          <div class="text-sm text-white/50">Backend: <span id="backend-ping" class="ml-2 font-medium">—</span></div>
+        </div>
+      </header>
+
+      <section class="grid grid-cols-12 gap-8">
+        <!-- left column -->
+        <div class="col-span-12 lg:col-span-7">
+          <div class="glass p-6 rounded-2xl neon-outline">
+            <!-- User ID -->
+            <div class="mb-4">
+              <label class="text-sm text-white/70">User ID</label>
+              <input id="user-id" placeholder="Enter your user ID (optional)" class="mt-2 w-full p-3 rounded-lg bg-[rgba(0,0,0,0.45)] border border-white/6 focus:outline-none focus:ring-2 focus:ring-[rgba(52,111,212,0.18)]" />
+            </div>
+
+            <!-- Dropzone -->
+            <div id="dropzone" class="dropzone p-6 rounded-xl flex flex-col gap-4 items-center justify-center cursor-pointer">
+              <div class="flex items-center gap-4">
+                <div class="p-3 rounded-lg" style="background:linear-gradient(90deg,#0b1220,#08101a)">
+                  <i class="fas fa-file-upload text-2xl" style="color:var(--accent)"></i>
+                </div>
+                <div>
+                  <div class="text-lg font-semibold">Drag & drop receipt</div>
+                  <div class="text-sm text-white/60">or click to browse — JPG, PNG, PDF (max 8MB)</div>
+                </div>
+              </div>
+
+              <div class="w-full">
+                <input id="file-input" type="file" accept="image/*,.pdf" class="w-full h-0 opacity-0" />
+                <div class="mt-4 flex gap-3">
+                  <button id="choose-btn" class="flex items-center gap-2 px-4 py-2 bg-[rgba(255,255,255,0.03)] rounded text-sm hover:bg-[rgba(255,255,255,0.05)]">
+                    <i class="fas fa-folder-open"></i> Choose file
+                  </button>
+
+                  <button id="drag-clear" class="flex items-center gap-2 px-4 py-2 bg-[rgba(255,255,255,0.03)] rounded text-sm hover:bg-[rgba(255,255,255,0.05)]">
+                    <i class="fas fa-trash"></i> Clear
+                  </button>
+
+                  <div class="ml-auto hidden sm:flex items-center gap-3 text-sm text-white/60">
+                    <div id="upload-size" class="">No file selected</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- preview + upload button -->
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div id="preview-card" class="col-span-2 p-4 bg-[rgba(0,0,0,0.45)] rounded-lg min-h-[140px] flex items-center justify-center">
+                <div id="preview-empty" class="text-white/40 text-center">
+                  <i class="fas fa-receipt text-3xl mb-2"></i>
+                  <div class="text-sm">No receipt selected</div>
+                </div>
+                <img id="preview-img" src="" alt="preview" class="hidden max-h-48 object-contain rounded" />
+              </div>
+
+              <div class="col-span-1 flex flex-col gap-3">
+                <button id="upload-btn" class="w-full p-3 rounded-xl text-white text-lg font-semibold bg-gradient-to-r from-[#346fd4] to-[#b37bff] hover:from-[#2e5fb9] hover:to-[#9f62e6]">
+                  <i class="fas fa-rocket mr-2"></i> Upload & Analyze
+                </button>
+
+                <div id="processing-box" class="hidden p-3 rounded-lg bg-[rgba(255,255,255,0.02)] text-sm text-white/80">
+                  <div class="flex items-center gap-3">
+                    <div class="spinner"></div>
+                    <div>
+                      <div id="proc-line" class="font-semibold">Waiting to start...</div>
+                      <div id="proc-sub" class="text-xs text-white/60">Upload progress & analysis will appear here.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="quick-actions" class="mt-auto text-xs text-white/60">
+                  <div class="mb-2">Quick</div>
+                  <button id="sample-load-btn" class="w-full text-sm p-2 rounded bg-white/5 hover:bg-white/6">Load sample image</button>
+                  <button id="clear-history" class="w-full text-sm p-2 rounded bg-white/5 hover:bg-white/6 mt-2">Clear local history</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Results area -->
+            <div id="result-root" class="mt-6"></div>
+          </div>
+        </div>
+
+        <!-- right column / history -->
+        <div class="col-span-12 lg:col-span-5">
+          <div class="glass p-6 rounded-2xl neon-outline">
+            <div class="flex items-center justify-between">
+              <h3 class="text-lg font-semibold">History</h3>
+              <div class="text-sm text-white/60">Saved locally</div>
+            </div>
+
+            <div id="history-list" class="mt-4 space-y-3 max-h-[52vh] overflow-auto">
+              <!-- history items injected here -->
+            </div>
+
+            <div class="mt-6 text-sm text-white/60">
+              <div><strong>Tip:</strong> You can export history to JSON using the export button below.</div>
+              <div class="mt-3 flex gap-3">
+                <button id="export-json" class="p-2 rounded bg-[rgba(52,111,212,0.12)]">Export JSON</button>
+                <button id="import-json" class="p-2 rounded bg-[rgba(255,255,255,0.03)]">Import JSON</button>
+              </div>
+            </div>
+
+            <div id="download-link-wrap" class="mt-4 hidden"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- SAMPLE IMAGE PATH (from your uploaded file on environment) -->
+  <script>
+    // Developer-provided sample file path (you can replace with an accessible URL)
+    const SAMPLE_IMAGE_URL = "/mnt/data/A_photograph_of_a_printed_receipt_from_a_business_.png";
+  </script>
+
+  <!-- APP SCRIPT -->
+  <script>
+  (function () {
+    // ---------- DOM ----------
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+    const chooseBtn = document.getElementById('choose-btn');
+    const previewImg = document.getElementById('preview-img');
+    const previewEmpty = document.getElementById('preview-empty');
+    const uploadBtn = document.getElementById('upload-btn');
+    const processingBox = document.getElementById('processing-box');
+    const procLine = document.getElementById('proc-line');
+    const procSub = document.getElementById('proc-sub');
+    const uploadSize = document.getElementById('upload-size');
+    const resultRoot = document.getElementById('result-root');
+    const historyList = document.getElementById('history-list');
+    const userIdInput = document.getElementById('user-id');
+    const sampleLoadBtn = document.getElementById('sample-load-btn');
+    const clearHistoryBtn = document.getElementById('clear-history');
+    const backendStatus = document.getElementById('backend-status');
+    const backendPing = document.getElementById('backend-ping');
+    const btnUpload = document.getElementById('btn-upload');
+    const btnHistory = document.getElementById('btn-history');
+    const btnSample = document.getElementById('btn-sample');
+    const samplePill = document.getElementById('sample-pill');
+    const sampleChoose = document.getElementById('btn-sample');
+
+    // ---------- STATE ----------
+    let currentFile = null;
+    const BACKEND_URL = "https://autoaudit-backend.onrender.com/verify";
+    const LS_KEY = "autoaudit_history_v1";
+
+    // ---------- UTIL ----------
+    function el(tag, classes='') { const e=document.createElement(tag); if(classes) e.className=classes; return e; }
+    function formatDate(ts=Date.now()) { const d=new Date(ts); return d.toLocaleString(); }
+
+    // ---------- HISTORY ----------
+    function loadHistory() {
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch {
+        return [];
+      }
+    }
+    function saveHistory(list) { localStorage.setItem(LS_KEY, JSON.stringify(list)); }
+    function addHistory(entry) {
+      const list = loadHistory();
+      list.unshift(entry);
+      // keep 50 max
+      if(list.length>50) list.pop();
+      saveHistory(list);
+      renderHistory();
+    }
+    function clearHistory() {
+      localStorage.removeItem(LS_KEY);
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const list = loadHistory();
+      historyList.innerHTML = '';
+      if(!list.length) {
+        const empty = el('div','text-white/40'); empty.textContent = 'No uploads yet — results will show here.';
+        historyList.appendChild(empty); return;
+      }
+      for(const item of list) {
+        const wrap = el('div','p-3 rounded-lg bg-[rgba(255,255,255,0.02)] flex items-start justify-between');
+        const left = el('div','flex-1');
+        left.innerHTML = `<div class="font-semibold">${item.filename || 'receipt'}</div>
+          <div class="text-xs text-white/60">${item.user_id ? 'User: '+item.user_id+' • ' : ''}${formatDate(item.ts)}</div>
+          <div class="text-sm mt-2 text-white/70">${(item.summary||'')}</div>`;
+        const right = el('div','ml-4 text-right');
+        const badge = el('div','px-3 py-1 rounded-full text-sm font-semibold ' + (item.final_verdict && item.final_verdict.includes('REAL') ? 'bg-emerald-600' : 'bg-red-500'));
+        badge.textContent = item.final_verdict || '—';
+        right.appendChild(badge);
+        wrap.appendChild(left); wrap.appendChild(right);
+        historyList.appendChild(wrap);
+      }
+    }
+
+    // ---------- FILE HANDLING ----------
+    function showPreview(file) {
+      if(!file) { previewImg.classList.add('hidden'); previewEmpty.classList.remove('hidden'); uploadSize.textContent='No file selected'; return; }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        previewImg.src = e.target.result;
+        previewImg.classList.remove('hidden');
+        previewEmpty.classList.add('hidden');
+      };
+      reader.readAsDataURL(file);
+      uploadSize.textContent = `${(file.size/1024/1024).toFixed(2)} MB • ${file.name}`;
+    }
+    function clearPreview() {
+      currentFile = null; previewImg.src=''; previewImg.classList.add('hidden'); previewEmpty.classList.remove('hidden'); uploadSize.textContent='No file selected'; resultRoot.innerHTML='';
+    }
+
+    // drag & drop events
+    dropzone.addEventListener('dragover', (e)=>{ e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', ()=>{ dropzone.classList.remove('dragover'); });
+    dropzone.addEventListener('drop', (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); const f = e.dataTransfer.files && e.dataTransfer.files[0]; if(f){ currentFile=f; showPreview(f); }});
+
+    fileInput.addEventListener('change', ()=>{ if(fileInput.files.length){ currentFile = fileInput.files[0]; showPreview(currentFile); }});
+    chooseBtn.addEventListener('click', ()=> fileInput.click());
+    document.getElementById('drag-clear').addEventListener('click', clearPreview);
+
+    // load sample image (developer-provided path)
+    sampleLoadBtn.addEventListener('click', () => {
+      // Try to fetch sample (may not be accessible in browser from local /mnt path).
+      // If not accessible, create an image element directly using the path (user can replace with hosted URL).
+      previewImg.src = SAMPLE_IMAGE_URL;
+      previewImg.classList.remove('hidden');
+      previewEmpty.classList.add('hidden');
+      uploadSize.textContent = 'Sample image loaded';
+      samplePill.classList.remove('hidden');
+      resultRoot.innerHTML = `<div class="text-sm text-white/60">Loaded sample image path (developer-supplied). If it does not display, host the file in your project.)</div>`;
+      // Mark currentFile as null (can't upload local path as File object) — user must choose a file to send POST.
+      currentFile = null;
+    });
+
+    // Also top-left sidebar sample button
+    btnSample.addEventListener('click', ()=> sampleLoadBtn.click());
+    btnUpload.addEventListener('click', ()=> btnUpload.closest('main') && (document.getElementById('file-input').click(), switchToUploadTab()));
+    btnHistory.addEventListener('click', ()=> switchToHistoryTab());
+
+    function switchToUploadTab(){
+      // noop for now — UI is single page; you could add sections.
+    }
+    function switchToHistoryTab(){
+      // scroll to right column
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    }
+
+    // ---------- BACKEND HEALTH CHECK ----------
+    async function checkBackend() {
+      try {
+        const resp = await fetch("https://autoaudit-backend.onrender.com/");
+        if(resp.ok){ backendStatus.textContent = 'Online'; backendStatus.classList.remove('text-red-400'); backendStatus.classList.add('text-green-400'); backendPing.textContent = 'OK'; return true; }
+      } catch(e) { /* ignore */ }
+      backendStatus.textContent = 'Offline'; backendStatus.classList.remove('text-green-400'); backendStatus.classList.add('text-red-400');
+      backendPing.textContent = 'Offline';
+      return false;
+    }
+    checkBackend();
+
+    // ---------- UPLOAD & ANALYZE ----------
+    uploadBtn.addEventListener('click', async () => {
+      if(!currentFile) {
+        alert('Please choose a file (or use sample + host it).');
+        return;
+      }
+      const userId = (userIdInput.value || '').trim();
+      processingBox.classList.remove('hidden');
+      procLine.textContent = 'Uploading...';
+      procSub.textContent = 'Please wait while we send the receipt to the backend.';
+
+      try {
+        const form = new FormData();
+        form.append('file', currentFile);
+        if(userId) form.append('user_id', userId);
+
+        const resp = await fetch(BACKEND_URL, { method:'POST', body: form });
+        const data = await resp.json();
+
+        if(!resp.ok || data.error) {
+          procLine.textContent = 'Error';
+          procSub.textContent = data && data.error ? data.error : 'Unknown backend error';
+          resultRoot.innerHTML = `<div class="p-4 rounded-lg bg-red-600 text-white">Error: ${data && data.error ? data.error : 'Bad response'}</div>`;
+          return;
+        }
+
+        // show result
+        const isReal = (data.final_verdict || '').toUpperCase().includes('REAL');
+        const colorClass = isReal ? 'badge-real' : 'badge-fake';
+        const verdictText = data.final_verdict || (isReal ? 'REAL' : 'FAKE');
+        const conf = data.anomaly_score !== null && data.anomaly_score !== undefined ? (Number(data.anomaly_score).toFixed(4)) : (data.classifier_confidence ? `${Math.round(data.classifier_confidence*100)}%` : 'N/A');
+
+        resultRoot.innerHTML = `
+          <div class="p-5 rounded-xl ${isReal ? 'bg-gradient-to-r from-green-600 to-emerald-500' : 'bg-gradient-to-r from-red-600 to-orange-500'} text-white">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <div class="text-2xl font-bold">${verdictText}</div>
+                <div class="text-sm text-white/90 ml-2">(${conf})</div>
+              </div>
+              <div class="text-xs text-white/80">User: ${userId || 'Guest'}</div>
+            </div>
+            <div class="mt-3 text-sm text-white/80 whitespace-pre-wrap">${(data.bill_text || '').slice(0, 250)}${(data.bill_text||'').length > 250 ? '…' : ''}</div>
+
+            <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <div class="p-3 bg-white/5 rounded">Rule check: <strong>${data.rule_check ? 'OK' : 'Fail'}</strong></div>
+              <div class="p-3 bg-white/5 rounded">Anomaly score: <strong>${data.anomaly_score ?? 'N/A'}</strong></div>
+              <div class="p-3 bg-white/5 rounded">Classifier: <strong>${data.classifier_pred === 0 ? 'Fake' : (data.classifier_pred === 1 ? 'Real' : 'N/A')}</strong></div>
+              <div class="p-3 bg-white/5 rounded">ML label: <strong>${data.anomaly_label ?? 'N/A'}</strong></div>
+            </div>
+          </div>
+        `;
+
+        // add to history
+        addHistory({
+          ts: Date.now(),
+          filename: currentFile.name,
+          user_id: userId,
+          final_verdict: verdictText,
+          anomaly_score: data.anomaly_score ?? null,
+          classifier_pred: data.classifier_pred ?? null,
+          summary: `${verdictText} • ${data.rule_check ? 'rule OK' : 'rule fail'}`
+        });
+
+        procLine.textContent = 'Analysis complete';
+        procSub.textContent = 'Result displayed below.';
+      } catch (err) {
+        console.error(err);
+        procLine.textContent = 'Network Error';
+        procSub.textContent = 'Could not contact backend. Make sure backend is running.';
+        resultRoot.innerHTML = `<div class="p-3 rounded bg-red-600 text-white">Network error. See console for details.</div>`;
+      } finally {
+        // hide spinner after short delay
+        setTimeout(()=> processingBox.classList.add('hidden'), 900);
+      }
+    });
+
+    // ---------- helpers: export/import JSON ----------
+    document.getElementById('export-json').addEventListener('click', ()=>{
+      const list = loadHistory();
+      const blob = new Blob([JSON.stringify(list, null, 2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'autoaudit-history.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('import-json').addEventListener('click', async ()=>{
+      const input = el('input'); input.type='file'; input.accept='application/json';
+      input.onchange = (e) => {
+        const f = e.target.files[0]; if(!f) return;
+        const r = new FileReader();
+        r.onload = (ev) => {
+          try {
+            const arr = JSON.parse(ev.target.result);
+            saveHistory(arr);
+            renderHistory();
+            alert('Imported history.');
+          } catch (err) { alert('Invalid JSON file'); }
+        }; r.readAsText(f);
+      };
+      input.click();
+    });
+
+    clearHistoryBtn.addEventListener('click', ()=>{
+      if(confirm('Clear local history? This cannot be undone.')) clearHistory();
+    });
+
+    // ---------- initial render ----------
+    renderHistory();
+
+    // ping backend every 6s
+    setInterval(checkBackend, 6000);
+
+    // expose some keys for dev console
+    window._AutoAudit = { addHistory, loadHistory, clearHistory, renderHistory };
+
+    // small animation on load
+    gsap.from('.glass', { opacity: 0, y: 12, stagger: 0.06, duration: 0.6, ease: 'power3.out' });
+  })();
+  </script>
+</body>
+</html>
