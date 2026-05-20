@@ -124,7 +124,14 @@ try:
 except Exception as e:
     CLASSIFIER = None
     print("⚠️ Could not load/wrap receipt_classifier.pkl:", e)
+FEATURE_COLUMNS = ["subtotal", "tax", "total", "thankyou"]
 
+try:
+    SCALER = joblib.load("models/scaler.pkl")
+    print("✅ Loaded models/scaler.pkl")
+except Exception as e:
+    SCALER = None
+    print("⚠️ Could not load scaler.pkl:", e)
 
 # ---------------------------
 # Root
@@ -154,10 +161,22 @@ async def verify(file: UploadFile = File(...)):
         if feat is None:
             raise ValueError("Feature extraction returned None")
     except Exception as e:
-        # cleanup then return
-        try: os.remove(path)
-        except: pass
-        return JSONResponse({"error": "Feature extraction failed", "detail": str(e)}, status_code=500)
+        import traceback
+        traceback.print_exc()
+
+        try:
+            os.remove(path)
+        except:
+            pass
+
+        return JSONResponse(
+            {
+                "error": "Feature extraction failed",
+                "detail": str(e),
+                "traceback": traceback.format_exc()
+            },
+            status_code=500
+        )
     finally:
         # remove uploaded file (we already have features)
         try: os.remove(path)
@@ -186,8 +205,13 @@ async def verify(file: UploadFile = File(...)):
     try:
         if ANOMALY_MODEL is not None:
             # build dict with only FEATURE_COLUMNS (ordered)
-            model_input = {k: feat.get(k, 0) for k in FEATURE_COLUMNS}
-            anomaly_score, anomaly_label = detect_anomaly(ANOMALY_MODEL, model_input)
+          values = [feat.get(k, 0) for k in FEATURE_COLUMNS]
+
+        if SCALER is not None:
+            values = SCALER.transform([values])
+
+            anomaly_score, anomaly_label = detect_anomaly(ANOMALY_MODEL, values)
+
             if anomaly_score is not None:
                 anomaly_score = float(anomaly_score)
             if anomaly_label is not None:
